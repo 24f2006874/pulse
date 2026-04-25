@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pulse"
+version = "1.0.0"
+description = "PULSE - Clinical Protocol RL Environment"
+requires-python = ">=3.10"
+dependencies = [
+    "openenv-core>=0.2.0",
+    "faker>=20.0.0",
+    "pydantic>=2.0.0",
+    "openai>=1.0.0",
+    "fastapi>=0.100.0",
+    "uvicorn>=0.20.0",
+]
+
+[project.scripts]
+server = "pulse.server.app:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["server*", "models.py", "client.py", "inference.py"]

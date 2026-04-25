@@ -1,0 +1,33 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Testing
+.pytest_cache/
+pytest-cache-*
+.coverage
+htmlcov/
+.tox/
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Outputs
+outputs/logs/
+outputs/evals/
+
+# uv
+uv.lock

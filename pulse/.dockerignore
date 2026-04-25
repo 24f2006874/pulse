@@ -1,0 +1,55 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Testing
+.pytest_cache/
+pytest-cache-*
+.coverage
+htmlcov/
+.tox/
+
+# Virtual environments
+venv/
+env/
+.venv/
+ENV/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Logs and temporary files
+*.log
+*.tmp
+*.temp
+
+# OS metadata
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project specific
+outputs/
+logs/
+*.egg-info/
+*.egg
+build/
+dist/
+
+# Hugging Face / OpenEnv cache
+.pytest_cache/
+*.lock
