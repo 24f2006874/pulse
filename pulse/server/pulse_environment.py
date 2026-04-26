@@ -607,7 +607,11 @@ class PulseEnvironment(Environment):
             return "No active patient"
 
         vitals = self._state.current_vitals
-        stage = self.curriculum.get_stage()["name"].upper()
+        stage = (
+            getattr(self._state, "difficulty", "")
+            or self._protocol.get("difficulty", "")
+            or self.curriculum.get_stage()["name"]
+        ).upper()
 
         return (
             f"[{stage}] {self._protocol.get('display_name', '')} | "
