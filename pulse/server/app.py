@@ -35,11 +35,16 @@ app = create_app(
 
 @app.get("/")
 def root():
+    return RedirectResponse(url="/ui/")
+
+
+@app.get("/api-info")
+def api_info():
     return {
         "service": "pulse",
         "status": "ok",
         "health": "/health",
-        "ui": "/ui",
+        "ui": "/ui/",
     }
 
 
