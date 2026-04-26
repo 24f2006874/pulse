@@ -96,6 +96,7 @@ class PulseEnvironment(Environment):
         "request_history",
         "physical_exam",
         "order_test",
+        "administer_treatment",
         "consult_specialist",
         "override_specialist",
         "request_admin_approval",
@@ -128,7 +129,7 @@ class PulseEnvironment(Environment):
     ) -> PulseObservation:
         """Start new clinical episode."""
 
-        if seed:
+        if seed is not None:
             random.seed(seed)
 
         diff = (difficulty or self.curriculum.get_stage()["name"]).strip().lower()
@@ -209,7 +210,7 @@ class PulseEnvironment(Environment):
             schema_alert="",
             schema_change_type="",
             steps_remaining=protocol.get("max_steps", 10),
-            budget_remaining=protocol.get("budget", 500),
+            budget_remaining=self._budget_remaining(),
             heart_rate=self._state.current_vitals.get("heart_rate", 80),
             blood_pressure=self._state.current_vitals.get("blood_pressure", 120),
             oxygen_saturation=self._state.current_vitals.get("oxygen_saturation", 98),
@@ -337,10 +338,7 @@ class PulseEnvironment(Environment):
             schema_alert=response.get("schema_alert", ""),
             schema_change_type=response.get("schema_change_type", ""),
             steps_remaining=max(0, max_steps - self._state.step_count),
-            budget_remaining=max(
-                0,
-                self._protocol.get("budget", 500) - self._state.budget_used,
-            ),
+            budget_remaining=self._budget_remaining(),
             heart_rate=self._state.current_vitals.get("heart_rate", 80),
             blood_pressure=self._state.current_vitals.get("blood_pressure", 120),
             oxygen_saturation=self._state.current_vitals.get("oxygen_saturation", 98),
@@ -371,6 +369,18 @@ class PulseEnvironment(Environment):
 
         action_type = action.action_type
         content = action.content
+
+        # Enforce schema drift as real action constraint
+        # If schema has changed but not acknowledged, restrict to acknowledgment only
+        if self._is_schema_drift_constraint_active() and action_type != "acknowledge_schema_change":
+            response["warning"] = (
+                "Schema drift detected! You must acknowledge the protocol update "
+                "before taking other actions. Use 'acknowledge_schema_change'."
+            )
+            response["clinical_notes"] = (
+                "Protocol update pending. Action blocked until acknowledged."
+            )
+            return done, response, submitted
 
         # Validate action type
         if action_type not in self.VALID_ACTION_TYPES:
@@ -405,7 +415,7 @@ class PulseEnvironment(Environment):
                 cost = costs[test]
                 
                 # Check budget before ordering
-                budget_remaining = self._protocol.get("budget", 500) - self._state.budget_used
+                budget_remaining = self._budget_remaining()
                 if cost > budget_remaining:
                     response["warning"] = (
                         f"Insufficient budget for {test}. "
@@ -498,10 +508,12 @@ class PulseEnvironment(Environment):
             )
 
         elif action_type == "request_admin_approval":
-            test_cost = float(content) if content.isdigit() else 0
-            budget_remaining = (
-                self._protocol.get("budget", 500) - self._state.budget_used
-            )
+            try:
+                test_cost = float(content.strip())
+            except (TypeError, ValueError, AttributeError):
+                test_cost = 0.0
+
+            budget_remaining = self._budget_remaining()
 
             approval = self._admin.request_approval(
                 test_cost=test_cost,
@@ -509,12 +521,33 @@ class PulseEnvironment(Environment):
                 clinical_justification=action.reasoning,
             )
 
-            if approval["approved"]:
-                self._state.budget_used += approval["extra_granted"]
+            if approval["approved"] and approval.get("extra_granted", 0.0) > 0:
                 self._state.admin_approved_extra = True
 
             response["admin_message"] = approval["message"]
             response["clinical_notes"] = f"Admin: {approval['message']}"
+
+        elif action_type == "administer_treatment":
+            treatment = content.strip()
+            if not treatment:
+                response["warning"] = "No treatment specified"
+                response["clinical_notes"] = "Treatment action requires medication/treatment name."
+            else:
+                contraindicated = check_contraindication(
+                    treatment,
+                    self._state.patient_flags,
+                    self._protocol.get("contraindications", []),
+                )
+
+                if contraindicated:
+                    self._state.patient_flags.append("CONTRAINDICATION_VIOLATED")
+                    response["warning"] = (
+                        f"CONTRAINDICATION ALERT: {treatment} is unsafe in current patient state"
+                    )
+                    response["clinical_notes"] = f"Treatment blocked: {treatment}"
+                else:
+                    self._state.patient_flags.append(treatment)
+                    response["clinical_notes"] = f"Treatment administered: {treatment}"
 
         elif action_type == "acknowledge_schema_change":
             self._agent_adapted_to_schema = True
@@ -580,7 +613,7 @@ class PulseEnvironment(Environment):
     def _check_schema_drift(self) -> Optional[dict]:
         """
         Patronus AI Bonus: Schema drift check.
-        10 percent chance at steps 4, 7, 10.
+        10 percent chance at steps 4, 5, 6.
         """
         step = self._state.step_count
         disease = self._state.correct_disease
@@ -602,6 +635,10 @@ class PulseEnvironment(Environment):
 
         return None
 
+    def _is_schema_drift_constraint_active(self) -> bool:
+        """Check if schema drift has occurred but not been acknowledged."""
+        return self._schema_changed_this_episode and not self._agent_adapted_to_schema
+
     def _format_summary(self) -> str:
         if not self._protocol:
             return "No active patient"
@@ -612,11 +649,17 @@ class PulseEnvironment(Environment):
             or self._protocol.get("difficulty", "")
             or self.curriculum.get_stage()["name"]
         ).upper()
+        budget_remaining = self._budget_remaining()
 
         return (
             f"[{stage}] {self._protocol.get('display_name', '')} | "
             f"HR: {vitals.get('heart_rate', 80):.0f} | "
             f"BP: {vitals.get('blood_pressure', 120):.0f} | "
             f"O2: {vitals.get('oxygen_saturation', 98):.0f}% | "
-            f"Budget: ${self._protocol.get('budget', 500) - self._state.budget_used:.0f}"
+            f"Budget: ${budget_remaining:.0f}"
         )
+
+    def _budget_remaining(self) -> float:
+        base_budget = self._protocol.get("budget", 500) if self._protocol else 500
+        admin_extra = self._admin.extra_granted if self._admin else 0.0
+        return max(0.0, (base_budget + admin_extra) - self._state.budget_used)

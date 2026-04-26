@@ -19,6 +19,8 @@ dependencies = [
 [project.scripts]
 server = "pulse.server.app:main"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["server*", "models.py", "client.py", "inference.py"]
+[tool.setuptools]
+packages = ["pulse", "pulse.server"]
+
+[tool.setuptools.package-dir]
+pulse = "."

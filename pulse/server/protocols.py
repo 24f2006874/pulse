@@ -311,6 +311,36 @@ def check_contraindication(
             "antibiotic" in action and
             "blood_cultures" not in patient_flags
         ),
+        # Additional contraindications for robustness
+        "nitroglycerin_with_viagra": (
+            ("nitroglycerin" in action or "nitro" in action) and
+            ("sildenafil" in patient_flags or "viagra" in patient_flags or "tadalafil" in patient_flags)
+        ),
+        "ace_inhibitor_in_pregnancy": (
+            ("lisinopril" in action or "enalapril" in action or "ace" in action) and
+            "pregnant" in patient_flags
+        ),
+        "warfarin_with_aspirin": (
+            "warfarin" in action and
+            "aspirin" in patient_flags
+        ),
+        "nsaid_with_kidney_disease": (
+            ("ibuprofen" in action or "naproxen" in action or "nsaid" in action) and
+            "kidney_disease" in patient_flags
+        ),
+        "metformin_with_contrast": (
+            "metformin" in action and
+            "contrast_administered" in patient_flags
+        ),
+        # Test-specific contraindications
+        "contrast_with_renal_failure": (
+            "contrast" in action and
+            ("renal_failure" in patient_flags or "creatinine_high" in patient_flags)
+        ),
+        "mag_sulfate_with_heart_block": (
+            "magnesium_sulfate" in action and
+            "heart_block" in patient_flags
+        ),
     }
 
     for rule in contraindications:

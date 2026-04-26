@@ -149,7 +149,7 @@ def demo_6_schema_drift():
     print(f"\n{'='*70}")
     print(f"DEMO: Schema Drift (Patronus AI Bonus)")
     print(f"{'='*70}")
-    print("Note: Schema drift has 10% chance at steps 4, 7, 10")
+    print("Note: Schema drift has 10% chance at steps 4, 5, 6")
     print("Running pneumonia case (drift affects pneumonia) ...\n")
     
     env = PulseEnvironment()

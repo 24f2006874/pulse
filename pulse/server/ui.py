@@ -208,6 +208,7 @@ with gr.Blocks(
         action_dropdown = gr.Dropdown(
             choices=[
                 "request_history", "physical_exam", "order_test",
+                "administer_treatment",
                 "consult_specialist", "override_specialist",
                 "submit_diagnosis", "wait"
             ],

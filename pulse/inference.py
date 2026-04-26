@@ -43,6 +43,7 @@ ACTIONS (respond in JSON):
 {"action_type": "request_history", "content": "", "reasoning": "Need patient history first"}
 {"action_type": "physical_exam", "content": "", "reasoning": "Assess vitals"}
 {"action_type": "order_test", "content": "test_name", "reasoning": "Why this test"}
+{"action_type": "administer_treatment", "content": "treatment_name", "reasoning": "Why this treatment now"}
 {"action_type": "consult_specialist", "content": "", "reasoning": "Need expert input"}
 {"action_type": "override_specialist", "content": "", "reasoning": "Evidence contradicts specialist"}
 {"action_type": "submit_diagnosis", "content": "Exact diagnosis from options", "reasoning": "Evidence supports"}

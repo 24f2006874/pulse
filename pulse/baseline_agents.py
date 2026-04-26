@@ -9,8 +9,12 @@ import random
 import sys
 from typing import List, Optional, Dict
 
-from models import PulseAction
-from server.pulse_environment import PulseEnvironment
+try:
+    from pulse.models import PulseAction
+    from pulse.server.pulse_environment import PulseEnvironment
+except ModuleNotFoundError:
+    from models import PulseAction
+    from server.pulse_environment import PulseEnvironment
 
 
 class BaselineAgent:

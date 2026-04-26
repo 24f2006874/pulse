@@ -46,10 +46,10 @@ def reward_specialist_handling(
     Override wrong = 1.0
     Override correct = 0.0
     Follow wrong = 0.0
-    Not consulted = 0.3
+    Not consulted = 0.1 (reduced to prevent 'never consult' exploit)
     """
     if not consulted:
-        return 0.3
+        return 0.1
 
     if specialist_was_correct and not agent_overrode:
         return 1.0
@@ -103,16 +103,45 @@ def reward_anti_exploit(
     """
     R6: Anti-Exploit Detection (5% weight)
     If triggered: zeroes total reward.
+    Hardened to detect:
+    - Repeated action loops (same action 3+ times in window)
+    - Repeated tests beyond tail-only (any 3+ repeats in sequence)
+    - Early diagnosis gaming (diagnosis before meaningful work)
+    - Excessive testing without progression
     """
+    # Check for repeated action loops (same action 3+ times in sliding window)
+    if len(actions_taken) >= 3:
+        for i in range(len(actions_taken) - 2):
+            if actions_taken[i] == actions_taken[i+1] == actions_taken[i+2]:
+                return 0.0
+
+    # Check for repeated tests beyond tail-only (any 3+ same tests in sequence)
     if len(tests_ordered) >= 3:
-        if len(set(tests_ordered[-3:])) == 1:
+        for i in range(len(tests_ordered) - 2):
+            if tests_ordered[i] == tests_ordered[i+1] == tests_ordered[i+2]:
+                return 0.0
+
+    # Early diagnosis gaming: diagnosis before meaningful protocol progress
+    # Require at least 2 distinct actions OR 1 test + 1 non-test action before diagnosis
+    if submitted_diagnosis:
+        # Count meaningful actions (tests, history, physical exam, etc.)
+        meaningful_actions = [a for a in actions_taken if a in [
+            "request_history", "physical_exam", "order_test"
+        ]]
+        if len(meaningful_actions) < 2:
             return 0.0
 
-    if submitted_diagnosis and steps_used <= 1:
+    # Excessive testing without progression (more than 8 tests total)
+    if len(tests_ordered) > 8:
         return 0.0
 
-    if len(tests_ordered) > 10:
-        return 0.0
+    # Test repetition penalty: more than 2 repeats of any single test
+    if len(tests_ordered) >= 3:
+        test_counts = {}
+        for test in tests_ordered:
+            test_counts[test] = test_counts.get(test, 0) + 1
+            if test_counts[test] > 2:
+                return 0.0
 
     return 1.0
 

@@ -36,6 +36,7 @@ At each step, the agent selects a structured action:
 - `request_history`
 - `physical_exam`
 - `order_test`
+- `administer_treatment`
 - `consult_specialist`
 - `override_specialist`
 - `request_admin_approval`
@@ -158,7 +159,7 @@ Notes:
 
 - `/docs` is the safest route for direct API inspection.
 - `/web` is available through the OpenEnv UI layer and is the easiest way to interact manually.
-- `/` may return `404`, which is expected because no homepage route is defined.
+- `/` redirects to `/ui/`.
 
 ### Docker Run
 
@@ -218,7 +219,7 @@ python -m pytest tests\test_environment.py -q
 
 Current verified baseline:
 
-- `42 passed`
+- `47 passed`
 
 ## Running Inference
 
@@ -282,9 +283,45 @@ PULSE is strongest when presented as:
 - a testbed for long-horizon reasoning under constraints
 - a transparent, judgeable RL environment with structured rewards
 
-The project’s biggest upgrade path is clearer presentation:
+## Training Results (Unsloth GRPO)
 
-- a polished README
-- benchmark results for baseline agents
-- a short demo flow for judges
-- a crisp explanation of why this environment matters
+Recent run snapshots are tracked in W&B and can be linked in this section.
+
+Important validation note:
+- Use the current `train.py` pipeline, which computes reward from the real PULSE environment without helper-action leakage.
+- Do not auto-complete episodes inside the reward function, because this inflates policy quality.
+
+## Running Training
+
+In Google Colab:
+
+```python
+%pip install unsloth trl transformers datasets wandb -q
+!python train.py
+```
+
+Optional arguments:
+
+```python
+!python train.py --epochs 3 --max-steps 288 --dataset-repeats 32 --eval-episodes 25
+```
+
+Environment variables:
+- `HF_TOKEN` - Hugging Face token
+- `WANDB_API_KEY` - W&B API key (optional)
+
+Outputs:
+- model/checkpoints: `./pulse-trained/`
+- post-train metrics: `./pulse-trained/eval_metrics.json`
+
+## Repository Structure
+
+```text
+pulse/
+├── train.py           # Unsloth GRPO training
+├── inference.py        # LLM inference with HF endpoints
+├── baseline_agents.py  # Baseline comparison agents
+├── demo.py            # Demo scenarios
+└── tests/
+    └── test_environment.py  # 47 passing tests
+```

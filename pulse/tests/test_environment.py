@@ -12,13 +12,20 @@ Run with: python -m pytest pulse/tests/test_environment.py -v
 import pytest
 import sys
 import os
+import importlib
 
 # Add project root to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+sys.path.insert(
+    0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+)
 
 from pulse.models import PulseAction, PulseObservation, PulseState
 from pulse.server.pulse_environment import PulseEnvironment
-from pulse.server.protocols import PROTOCOLS, check_protocol_adherence, check_contraindication
+from pulse.server.protocols import (
+    PROTOCOLS,
+    check_protocol_adherence,
+    check_contraindication,
+)
 from pulse.server.specialist import SpecialistAgent
 from pulse.server.actors import NurseActor, LabTechActor, AdminActor
 from pulse.server.rewards import compute_total_reward
@@ -62,6 +69,13 @@ class TestPulseEnvironment:
         assert obs1.patient_summary == obs2.patient_summary
         assert obs1.heart_rate == obs2.heart_rate
 
+    def test_reset_with_zero_seed(self, env):
+        """Test that seed=0 still initializes deterministic RNG state."""
+        obs1 = env.reset(seed=0, disease="uti")
+        obs2 = env.reset(seed=0, disease="uti")
+        assert obs1.patient_summary == obs2.patient_summary
+        assert obs1.heart_rate == obs2.heart_rate
+
     def test_reset_respects_requested_difficulty(self, env):
         """Test that difficulty argument controls sampled disease bucket."""
         env.reset(seed=123, difficulty="hard")
@@ -75,7 +89,9 @@ class TestPulseEnvironment:
 
     def test_step_before_reset_raises_clear_error(self, env):
         """Test that step before reset fails with a clear message."""
-        with pytest.raises(RuntimeError, match="Environment must be reset before calling step"):
+        with pytest.raises(
+            RuntimeError, match="Environment must be reset before calling step"
+        ):
             env.step(PulseAction(action_type="wait"))
 
     def test_observation_inherits_done_and_reward(self):
@@ -91,13 +107,13 @@ class TestPulseEnvironment:
     def test_valid_action_types(self, env):
         """Test that all valid action types are accepted."""
         env.reset(difficulty="easy", disease="uti")
-        
+
         valid_actions = [
             PulseAction(action_type="request_history"),
             PulseAction(action_type="physical_exam"),
             PulseAction(action_type="wait"),
         ]
-        
+
         for action in valid_actions:
             obs = env.step(action)
             assert obs is not None
@@ -107,30 +123,30 @@ class TestPulseEnvironment:
     def test_invalid_action_type(self, env):
         """Test that invalid action types are rejected."""
         env.reset(difficulty="easy", disease="uti")
-        
+
         action = PulseAction(action_type="invalid_action")
         obs = env.step(action)
-        
+
         assert "Invalid action type" in obs.warning
         assert "Unknown action" in obs.clinical_notes
 
     def test_request_history(self, env):
         """Test request_history action."""
         env.reset(difficulty="easy", disease="uti")
-        
+
         action = PulseAction(action_type="request_history")
         obs = env.step(action)
-        
+
         assert "History:" in obs.clinical_notes
         assert "request_history" in env.state.tests_ordered
 
     def test_physical_exam(self, env):
         """Test physical_exam action."""
         env.reset(difficulty="easy", disease="uti")
-        
+
         action = PulseAction(action_type="physical_exam")
         obs = env.step(action)
-        
+
         assert "Exam:" in obs.clinical_notes
         assert "HR" in obs.clinical_notes
         assert "physical_exam" in env.state.tests_ordered
@@ -138,10 +154,10 @@ class TestPulseEnvironment:
     def test_order_test_success(self, env):
         """Test ordering a valid test."""
         env.reset(difficulty="easy", disease="uti")
-        
+
         action = PulseAction(action_type="order_test", content="urinalysis")
         obs = env.step(action)
-        
+
         assert "Ordered:" in obs.clinical_notes
         assert "urinalysis" in env.state.tests_ordered
         assert env.state.budget_used == 50  # Cost of urinalysis
@@ -149,10 +165,10 @@ class TestPulseEnvironment:
     def test_order_test_not_available(self, env):
         """Test ordering an unavailable test."""
         env.reset(difficulty="easy", disease="uti")
-        
+
         action = PulseAction(action_type="order_test", content="mri_scan")
         obs = env.step(action)
-        
+
         assert "not available" in obs.clinical_notes
         assert "Available:" in obs.warning
 
@@ -161,19 +177,22 @@ class TestPulseEnvironment:
         # Create env with very small budget
         env.reset(difficulty="easy", disease="uti")
         env._protocol["budget"] = 10  # Very small budget
-        
+
         action = PulseAction(action_type="order_test", content="ct_scan")  # Costs 400
         obs = env.step(action)
-        
-        assert "Insufficient budget" in obs.warning or "budget exceeded" in obs.clinical_notes
+
+        assert (
+            "Insufficient budget" in obs.warning
+            or "budget exceeded" in obs.clinical_notes
+        )
 
     def test_consult_specialist(self, env):
         """Test consulting the specialist."""
         env.reset(difficulty="easy", disease="uti")
-        
+
         action = PulseAction(action_type="consult_specialist")
         obs = env.step(action)
-        
+
         assert obs.specialist_recommendation is not None
         assert obs.specialist_confidence > 0
         assert obs.specialist_reasoning != ""
@@ -183,50 +202,57 @@ class TestPulseEnvironment:
         """Test overriding the specialist."""
         env.reset(difficulty="easy", disease="uti")
         env._state.specialist_consulted = True  # Must consult first
-        
-        action = PulseAction(action_type="override_specialist", reasoning="Evidence contradicts")
+
+        action = PulseAction(
+            action_type="override_specialist", reasoning="Evidence contradicts"
+        )
         obs = env.step(action)
-        
+
         assert env.state.agent_overrode is True
         assert "Overriding specialist" in obs.clinical_notes
 
     def test_submit_diagnosis_valid(self, env):
         """Test submitting a valid diagnosis."""
         env.reset(difficulty="easy", disease="uti")
-        
-        action = PulseAction(action_type="submit_diagnosis", content="Urinary Tract Infection")
+
+        action = PulseAction(
+            action_type="submit_diagnosis", content="Urinary Tract Infection"
+        )
         obs = env.step(action)
-        
+
         assert obs.done is True
         assert "CORRECT" in obs.clinical_notes
 
     def test_submit_diagnosis_invalid_option(self, env):
         """Test submitting a diagnosis not in options."""
         env.reset(difficulty="easy", disease="uti")
-        
+
         action = PulseAction(action_type="submit_diagnosis", content="Random Disease")
         obs = env.step(action)
-        
+
         assert obs.done is True
-        assert "Invalid diagnosis" in obs.warning or "not in available options" in obs.warning
+        assert (
+            "Invalid diagnosis" in obs.warning
+            or "not in available options" in obs.warning
+        )
 
     def test_submit_diagnosis_incorrect(self, env):
         """Test submitting an incorrect but valid diagnosis."""
         env.reset(difficulty="easy", disease="uti")
-        
+
         action = PulseAction(action_type="submit_diagnosis", content="Kidney Stone")
         obs = env.step(action)
-        
+
         assert obs.done is True
         assert "INCORRECT" in obs.clinical_notes
 
     def test_wait_action(self, env):
         """Test wait action."""
         env.reset(difficulty="easy", disease="uti")
-        
+
         action = PulseAction(action_type="wait")
         obs = env.step(action)
-        
+
         assert "Waiting" in obs.clinical_notes
         assert "deteriorates" in obs.clinical_notes
 
@@ -234,25 +260,25 @@ class TestPulseEnvironment:
         """Test that max steps ends the episode."""
         env.reset(difficulty="easy", disease="uti")
         # UTI has max_steps=6
-        
+
         for i in range(6):
             action = PulseAction(action_type="wait")
             obs = env.step(action)
-        
+
         assert obs.done is True
         assert "MAX STEPS REACHED" in obs.clinical_notes
 
     def test_patient_deterioration(self, env):
         """Test that patient vitals deteriorate over time."""
         env.reset(difficulty="medium", disease="pneumonia")
-        
+
         initial_o2 = env.state.current_vitals["oxygen_saturation"]
-        
+
         # Take several steps
         for _ in range(5):
             action = PulseAction(action_type="wait")
             env.step(action)
-        
+
         final_o2 = env.state.current_vitals["oxygen_saturation"]
         assert final_o2 < initial_o2
 
@@ -260,17 +286,49 @@ class TestPulseEnvironment:
         """Test that budget is tracked correctly."""
         env = PulseEnvironment()
         env.reset(difficulty="easy", disease="uti")
-        
+
         initial_budget = env._protocol.get("budget", 500)
-        
+
         # Order a test
         action = PulseAction(action_type="order_test", content="urinalysis")
         obs = env.step(action)
-        
+
         assert obs.budget_remaining == initial_budget - 50
-        
+
         obs = env.step(PulseAction(action_type="wait"))
         assert obs.budget_remaining == initial_budget - 50
+
+    def test_admin_approval_increases_effective_budget(self):
+        """Test that approved extra funds increase available budget."""
+        env = PulseEnvironment()
+        obs = env.reset(difficulty="medium", disease="pneumonia")
+        initial_budget_remaining = obs.budget_remaining
+
+        obs = env.step(
+            PulseAction(
+                action_type="request_admin_approval",
+                content="430",
+                reasoning="Patient is deteriorating with severe respiratory distress and requires urgent escalation imaging.",
+            )
+        )
+
+        assert env.state.admin_approved_extra is True
+        assert obs.budget_remaining > initial_budget_remaining
+
+    def test_admin_approval_accepts_decimal_cost(self):
+        """Test admin approval parses numeric values beyond digits-only strings."""
+        env = PulseEnvironment()
+        env.reset(difficulty="medium", disease="pneumonia")
+
+        obs = env.step(
+            PulseAction(
+                action_type="request_admin_approval",
+                content="430.0",
+                reasoning="Respiratory status is worsening and this imaging is clinically justified to avoid missed complications.",
+            )
+        )
+
+        assert "Approved additional" in obs.admin_message
 
     def test_state_property(self, env):
         """Test that state property returns PulseState."""
@@ -282,13 +340,15 @@ class TestPulseEnvironment:
 
     def test_contraindication_check(self, env):
         """Test contraindication detection."""
-        # Test strep throat contraindication
         env.reset(difficulty="easy", disease="strep_throat")
-        
-        # First, try to order amoxicillin without confirming strep
-        # (This would be caught by check_contraindication if "amoxicillin" is in the action)
-        # For now, just verify the protocol has contraindications
-        assert len(env._protocol.get("contraindications", [])) > 0
+
+        # Attempt treatment before strep confirmation to trigger contraindication.
+        obs = env.step(
+            PulseAction(action_type="administer_treatment", content="amoxicillin")
+        )
+
+        assert "CONTRAINDICATION ALERT" in obs.warning
+        assert "CONTRAINDICATION_VIOLATED" in env.state.patient_flags
 
 
 class TestSpecialistAgent:
@@ -305,7 +365,7 @@ class TestSpecialistAgent:
         easy_spec = SpecialistAgent(specialty="cardiology", difficulty="easy")
         med_spec = SpecialistAgent(specialty="cardiology", difficulty="medium")
         hard_spec = SpecialistAgent(specialty="cardiology", difficulty="hard")
-        
+
         assert easy_spec.competence == 1.0
         assert med_spec.competence == 0.75
         assert hard_spec.competence == 0.70
@@ -313,13 +373,13 @@ class TestSpecialistAgent:
     def test_specialist_recommend(self):
         """Test specialist generates recommendations."""
         specialist = SpecialistAgent(specialty="cardiology", difficulty="easy")
-        
+
         result = specialist.recommend(
             full_state={"vitals": {"heart_rate": 80}, "chief_complaint": "chest pain"},
             correct_rec="ecg",
-            wrong_rec="mri"
+            wrong_rec="mri",
         )
-        
+
         assert "recommendation" in result
         assert "confidence" in result
         assert "reasoning" in result
@@ -328,14 +388,14 @@ class TestSpecialistAgent:
     def test_specialist_partial_observability(self):
         """Test specialist only sees relevant vitals."""
         specialist = SpecialistAgent(specialty="cardiology", difficulty="easy")
-        
+
         full_state = {
             "vitals": {"heart_rate": 80, "blood_pressure": 120, "temperature": 37},
-            "chief_complaint": "chest pain"
+            "chief_complaint": "chest pain",
         }
-        
+
         observed = specialist.observe(full_state)
-        
+
         # Cardiology sees heart_rate and blood_pressure, not temperature
         assert "heart_rate" in observed["vitals"]
         assert "blood_pressure" in observed["vitals"]
@@ -349,54 +409,56 @@ class TestActors:
         """Test nurse reports vitals."""
         nurse = NurseActor()
         vitals = {"heart_rate": 80, "blood_pressure": 120}
-        
+
         report = nurse.report_vitals(vitals)
-        
+
         assert "heart_rate" in report
         assert "nurse_note" in report
 
     def test_lab_tech_processing(self):
         """Test lab tech processes tests with delays."""
         lab = LabTechActor()
-        
+
         lab.order_test("rapid_strep_test", current_step=1, result="POSITIVE")
         lab.order_test("blood_cultures", current_step=1, result="Pending")
-        
+
         # Rapid strep has 0 delay, should be available immediately
         available = lab.get_available(1)
         assert "rapid_strep_test" in available
-        
+
         # Blood culture has 2 step delay
-        assert "blood_cultures" not in lab.get_available(1)
+        assert "blood_cultures" in lab.get_pending_names()
         assert "blood_cultures" not in lab.get_available(2)
         assert "blood_cultures" in lab.get_available(3)
+
+        # Delivered results should no longer appear as pending.
+        assert "rapid_strep_test" not in lab.get_pending_names()
+        assert "blood_cultures" not in lab.get_pending_names()
 
     def test_admin_approval(self):
         """Test admin approval for extra budget."""
         admin = AdminActor(initial_budget=500)
-        
+
         # Request within budget should be approved
         result = admin.request_approval(
             test_cost=100,
             budget_remaining=200,
-            clinical_justification="Patient needs test"
+            clinical_justification="Patient needs test",
         )
         assert result["approved"] is True
-        
+
         # Request over budget with good justification
         result = admin.request_approval(
             test_cost=200,
             budget_remaining=100,
-            clinical_justification="This is a very important clinical justification"
+            clinical_justification="This is a very important clinical justification",
         )
         assert result["approved"] is True
         assert result["extra_granted"] > 0
-        
+
         # Request over budget with poor justification
         result = admin.request_approval(
-            test_cost=200,
-            budget_remaining=100,
-            clinical_justification="short"
+            test_cost=200, budget_remaining=100, clinical_justification="short"
         )
         assert result["approved"] is False
 
@@ -420,10 +482,16 @@ class TestRewards:
             max_steps=10,
             contraindication_triggered=False,
             patient_critical=False,
-            actions_taken=["request_history", "order_test", "order_test", "consult_specialist", "submit_diagnosis"],
-            reasoning="Patient symptoms indicate UTI"
+            actions_taken=[
+                "request_history",
+                "order_test",
+                "order_test",
+                "consult_specialist",
+                "submit_diagnosis",
+            ],
+            reasoning="Patient symptoms indicate UTI",
         )
-        
+
         assert rewards["protocol"] == 1.0
         assert rewards["diagnosis"] == 1.0
         assert rewards["total"] > 0.8
@@ -445,9 +513,9 @@ class TestRewards:
             contraindication_triggered=False,
             patient_critical=False,
             actions_taken=["order_test", "order_test", "order_test"],
-            reasoning=""
+            reasoning="",
         )
-        
+
         assert rewards["anti_exploit"] == 0.0
         assert rewards["total"] == 0.0  # Anti-exploit zeroes total
 
@@ -469,10 +537,104 @@ class TestRewards:
             contraindication_triggered=False,
             patient_critical=False,
             actions_taken=["request_history"],
-            reasoning="Brief reasoning"
+            reasoning="Brief reasoning",
         )
-        
+
         assert rewards["token_efficiency"] == 1.0
+
+    def test_anti_exploit_repeated_action_loop(self):
+        """Test anti-exploit catches repeated action loops."""
+        rewards = compute_total_reward(
+            tests_ordered=["request_history", "physical_exam", "order_test"],
+            required_sequence=["request_history", "physical_exam", "order_test", "urinalysis"],
+            submitted_diagnosis="",
+            correct_diagnosis="Disease",
+            specialist_consulted=False,
+            specialist_was_correct=False,
+            agent_overrode=False,
+            budget_used=150,
+            initial_budget=500,
+            steps_used=5,
+            max_steps=10,
+            contraindication_triggered=False,
+            patient_critical=False,
+            actions_taken=["order_test", "order_test", "order_test"],  # Repeated action loop
+            reasoning="",
+        )
+
+        assert rewards["anti_exploit"] == 0.0
+        assert rewards["total"] == 0.0  # Anti-exploit zeroes total
+
+    def test_anti_exploit_repeated_tests_beyond_tail(self):
+        """Test anti-exploit catches repeated tests anywhere in sequence."""
+        rewards = compute_total_reward(
+            tests_ordered=["request_history", "urinalysis", "urinalysis", "urinalysis", "physical_exam"],
+            required_sequence=["request_history", "urinalysis", "physical_exam"],
+            submitted_diagnosis="",
+            correct_diagnosis="Disease",
+            specialist_consulted=False,
+            specialist_was_correct=False,
+            agent_overrode=False,
+            budget_used=200,
+            initial_budget=500,
+            steps_used=5,
+            max_steps=10,
+            contraindication_triggered=False,
+            patient_critical=False,
+            actions_taken=["request_history", "order_test", "order_test", "order_test", "physical_exam"],
+            reasoning="",
+        )
+
+        assert rewards["anti_exploit"] == 0.0
+        assert rewards["total"] == 0.0  # Anti-exploit zeroes total
+
+    def test_anti_exploit_early_diagnosis_gaming(self):
+        """Test anti-exploit catches early diagnosis before meaningful work."""
+        rewards = compute_total_reward(
+            tests_ordered=["request_history"],  # Only one meaningful action
+            required_sequence=["request_history", "physical_exam"],
+            submitted_diagnosis="Disease",
+            correct_diagnosis="Disease",
+            specialist_consulted=False,
+            specialist_was_correct=False,
+            agent_overrode=False,
+            budget_used=0,
+            initial_budget=500,
+            steps_used=2,
+            max_steps=10,
+            contraindication_triggered=False,
+            patient_critical=False,
+            actions_taken=["request_history", "submit_diagnosis"],
+            reasoning="",
+        )
+
+        assert rewards["anti_exploit"] == 0.0
+        assert rewards["total"] == 0.0  # Anti-exploit zeroes total
+
+    def test_specialist_handling_never_consult_penalized(self):
+        """Test that never consulting specialist is now penalized (reduced reward)."""
+        rewards = compute_total_reward(
+            tests_ordered=["request_history", "physical_exam", "urinalysis"],
+            required_sequence=["request_history", "physical_exam", "urinalysis"],
+            submitted_diagnosis="Disease",
+            correct_diagnosis="Disease",
+            specialist_consulted=False,  # Never consulted
+            specialist_was_correct=True,
+            agent_overrode=False,
+            budget_used=150,
+            initial_budget=500,
+            steps_used=4,
+            max_steps=10,
+            contraindication_triggered=False,
+            patient_critical=False,
+            actions_taken=["request_history", "physical_exam", "order_test", "submit_diagnosis"],
+            reasoning="",
+        )
+
+        # Should get reduced reward for not consulting (0.1 instead of 0.3)
+        assert rewards["specialist"] == 0.1
+        # Total should be lower than if consulted correctly
+        assert rewards["total"] < 0.5  # Should be significantly reduced
 
 
 class TestCurriculum:
@@ -487,28 +649,28 @@ class TestCurriculum:
     def test_curriculum_escalates(self):
         """Test curriculum escalates when agent performs well."""
         curriculum = PulseCurriculum()
-        
+
         # Record high rewards
         for _ in range(10):  # Exactly window of 10
             curriculum.record(0.9)
-        
+
         stage = curriculum.get_stage()
         assert stage["name"] == "medium"
 
     def test_curriculum_de_escalates(self):
         """Test curriculum de-escalates when agent struggles."""
         curriculum = PulseCurriculum()
-        
+
         # First escalate to medium
         for _ in range(10):
             curriculum.record(0.9)
-        
+
         assert curriculum.get_stage()["name"] == "medium"
-        
+
         # Then record poor performance
         for _ in range(15):
             curriculum.record(0.2)
-        
+
         stage = curriculum.get_stage()
         assert stage["name"] == "easy"
 
@@ -520,7 +682,7 @@ class TestProtocols:
         """Test perfect protocol adherence."""
         score = check_protocol_adherence(
             tests_ordered=["request_history", "urinalysis", "urine_culture"],
-            required_sequence=["request_history", "urinalysis", "urine_culture"]
+            required_sequence=["request_history", "urinalysis", "urine_culture"],
         )
         assert score == 1.0
 
@@ -528,7 +690,7 @@ class TestProtocols:
         """Test partial protocol adherence."""
         score = check_protocol_adherence(
             tests_ordered=["request_history", "blood_test"],
-            required_sequence=["request_history", "urinalysis", "urine_culture"]
+            required_sequence=["request_history", "urinalysis", "urine_culture"],
         )
         assert score < 1.0
         assert score > 0.0
@@ -536,8 +698,7 @@ class TestProtocols:
     def test_protocol_adherence_empty(self):
         """Test empty tests ordered."""
         score = check_protocol_adherence(
-            tests_ordered=[],
-            required_sequence=["request_history", "urinalysis"]
+            tests_ordered=[], required_sequence=["request_history", "urinalysis"]
         )
         assert score == 0.0
 
@@ -548,7 +709,7 @@ class TestDataGenerator:
     def test_generate_patient(self):
         """Test patient generation."""
         patient = generate_patient("uti")
-        
+
         assert "patient_id" in patient
         assert "age" in patient
         assert "sex" in patient
@@ -566,6 +727,15 @@ class TestDataGenerator:
         """Test unknown test result."""
         result = get_test_result("uti", "unknown_test")
         assert "pending" in result.lower() or result == ""
+
+
+class TestPackaging:
+    """Packaging and import sanity checks."""
+
+    def test_baseline_agents_importable_as_package(self):
+        """Test baseline module imports with package-qualified paths."""
+        mod = importlib.import_module("pulse.baseline_agents")
+        assert hasattr(mod, "RandomAgent")
 
 
 if __name__ == "__main__":

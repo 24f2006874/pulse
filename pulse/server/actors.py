@@ -21,13 +21,12 @@ class NurseActor:
         if random.random() < self.ERROR_RATE:
             vital = random.choice(list(reported.keys()))
             original = reported[vital]
-            reported[vital] = round(
-                original * random.uniform(0.85, 1.15), 1
-            )
+            reported[vital] = round(original * random.uniform(0.85, 1.15), 1)
             had_error = True
 
         reported["nurse_note"] = (
-            "Vitals reassessed." if not had_error
+            "Vitals reassessed."
+            if not had_error
             else "Vitals rechecked - please verify."
         )
 
@@ -71,9 +70,12 @@ class LabTechActor:
 
     def get_available(self, current_step: int) -> dict:
         available = {}
-        for test, data in self.pending.items():
+
+        for test, data in list(self.pending.items()):
             if current_step >= data["ready_at"]:
                 available[test] = data["result"]
+                del self.pending[test]
+
         return available
 
     def get_pending_names(self) -> list:
@@ -111,13 +113,13 @@ class AdminActor:
             if shortfall > self.max_extra - self.extra_granted:
                 return {
                     "approved": False,
-                    "message": (
-                        "Request denied. Budget limit reached."
-                    ),
+                    "message": ("Request denied. Budget limit reached."),
                     "extra_granted": 0.0,
                 }
 
-            justification_ok = len(clinical_justification) > 20
+            justification_ok = (
+                shortfall <= self.APPROVAL_THRESHOLD or len(clinical_justification) > 20
+            )
 
             if justification_ok:
                 self.extra_granted += shortfall
@@ -132,9 +134,7 @@ class AdminActor:
             else:
                 return {
                     "approved": False,
-                    "message": (
-                        "Denied. Insufficient clinical justification."
-                    ),
+                    "message": ("Denied. Insufficient clinical justification."),
                     "extra_granted": 0.0,
                 }
 
