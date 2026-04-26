@@ -62,6 +62,17 @@ class TestPulseEnvironment:
         assert obs1.patient_summary == obs2.patient_summary
         assert obs1.heart_rate == obs2.heart_rate
 
+    def test_reset_respects_requested_difficulty(self, env):
+        """Test that difficulty argument controls sampled disease bucket."""
+        env.reset(seed=123, difficulty="hard")
+        assert env.state.correct_disease == "sepsis"
+
+        env.reset(seed=123, difficulty="medium")
+        assert env.state.correct_disease in {"pneumonia", "dka"}
+
+        env.reset(seed=123, difficulty="easy")
+        assert env.state.correct_disease in {"uti", "strep_throat"}
+
     def test_step_before_reset_raises_clear_error(self, env):
         """Test that step before reset fails with a clear message."""
         with pytest.raises(RuntimeError, match="Environment must be reset before calling step"):

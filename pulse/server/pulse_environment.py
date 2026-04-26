@@ -131,8 +131,18 @@ class PulseEnvironment(Environment):
         if seed:
             random.seed(seed)
 
-        diff = difficulty or self.curriculum.get_stage()["name"]
-        chosen_disease = disease or self.curriculum.sample_disease()
+        diff = (difficulty or self.curriculum.get_stage()["name"]).strip().lower()
+
+        if disease:
+            chosen_disease = disease
+        elif difficulty:
+            # When UI explicitly sets difficulty, sample from that bucket
+            # instead of the curriculum's current stage.
+            difficulty_pool = get_diseases_by_difficulty(diff)
+            chosen_disease = random.choice(difficulty_pool) if difficulty_pool else self.curriculum.sample_disease()
+        else:
+            chosen_disease = self.curriculum.sample_disease()
+
         protocol = copy.deepcopy(PROTOCOLS.get(chosen_disease, {}))
 
         self._patient = generate_patient(chosen_disease)
